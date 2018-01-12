@@ -1,8 +1,18 @@
-# Bigint
+# bigint
 
-Big numbers and hashes
+[![Build Status](https://travis-ci.org/cryptape/bigint.svg?branch=master)](https://travis-ci.org/cryptape/bigint)
 
-## License
+Fixed-sized integers arithmetic
 
-Unlike most parts of Parity, which fall under the GPLv3, this package is dual-licensed under MIT/Apache2 at the user's choice.
-Find the associated license files in this directory as `LICENSE-MIT` and `LICENSE-APACHE2` respectively.
+```rust
+extern crate bigint;
+use bigint::{U256, Uint};
+
+fn main() {
+	let mut val: U256 = 1023.into();
+	for _ in 0..200 { val = val * 2.into() }
+	assert_eq!(
+		&format!("{}", val), 
+		"1643897619276947051879427220465009342380213662639797070513307648"
+	);
+}
