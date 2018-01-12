@@ -1,0 +1,10 @@
+language: rust
+rust:
+  - stable
+  - beta
+  - nightly
+script:
+  - cargo build --features=heapsizeof,serde
+  - cargo test --release --features=heapsizeof,serde
+  - rustup default nightly
+  - cargo bench
