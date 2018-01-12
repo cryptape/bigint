@@ -7,14 +7,18 @@
 // except according to those terms.
 
 //! General hash types, a fixed-size raw-data type used as the output of hash functions.
-#![rustfmt_skip]
+
 
 use U256;
 use libc::{c_void, memcmp};
 use rand::{Rand, Rng};
 use rand::os::OsRng;
-use rustc_hex::{FromHex, FromHexError, ToHex};
+use rustc_hex::{FromHex, FromHexError};
+#[cfg(feature = "serde")]
+use rustc_hex::ToHex;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+#[cfg(feature = "serde")]
 use serde::de::{Error, Visitor};
 use std::{ops, fmt, cmp, str};
 use std::cmp::{min, Ordering};
@@ -456,59 +460,56 @@ impl_hash!(H2048, 256);
 
 
 macro_rules! impl_serde_for_bigint {
-    ($from: ident) => {
-        impl<'de> Deserialize<'de> for $from {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
-                struct HashVisitor;
+    ($($from: ident),+) => (
+        $(
+            impl<'de> Deserialize<'de> for $from {
+                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+                    struct HashVisitor;
 
-                impl<'de> Visitor<'de> for HashVisitor {
-                    type Value = $from;
+                    impl<'de> Visitor<'de> for HashVisitor {
+                        type Value = $from;
 
-                    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                        formatter.write_str("struct Hash")
+                        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                            formatter.write_str("struct Hash")
+                        }
+
+                        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> where E: Error {
+                            let value = match value.len() {
+                                0 => $from::from(0),
+                                2 if value == "0x" => $from::from(0),
+                                _ if value.starts_with("0x") => $from::from_str(&value[2..]).map_err(|_| {
+                                    Error::custom(format!("Invalid hex value {}.", value).as_str())
+                                })?,
+                                _ => $from::from_str(value).map_err(|_| {
+                                    Error::custom(format!("Invalid hex value {}.", value).as_str())
+                                })?,
+                            };
+
+                            Ok(value)
+                        }
+
+                        fn visit_string<E>(self, value: String) -> Result<Self::Value, E> where E: Error {
+                            self.visit_str(value.as_ref())
+                        }
                     }
 
-                    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> where E: Error {
-                        let value = match value.len() {
-                            0 => $from::from(0),
-                            2 if value == "0x" => $from::from(0),
-                            _ if value.starts_with("0x") => $from::from_str(&value[2..]).map_err(|_| {
-                                Error::custom(format!("Invalid hex value {}.", value).as_str())
-                            })?,
-                            _ => $from::from_str(value).map_err(|_| {
-                                Error::custom(format!("Invalid hex value {}.", value).as_str())
-                            })?,
-                        };
-
-                        Ok(value)
-                    }
-
-                    fn visit_string<E>(self, value: String) -> Result<Self::Value, E> where E: Error {
-                        self.visit_str(value.as_ref())
-                    }
+                    deserializer.deserialize_str(HashVisitor)
                 }
-
-                deserializer.deserialize_str(HashVisitor)
             }
-        }
 
-        impl Serialize for $from {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-                let mut hex = "0x".to_owned();
-                hex.push_str(&self.to_hex());
-                serializer.serialize_str(&hex)
+            impl Serialize for $from {
+                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+                    let mut hex = "0x".to_owned();
+                    hex.push_str(&self.to_hex());
+                    serializer.serialize_str(&hex)
+                }
             }
-        }
-    }
+        ) +
+    );
 }
 
-impl_serde_for_bigint!(H64);
-impl_serde_for_bigint!(H160);
-impl_serde_for_bigint!(H256);
-impl_serde_for_bigint!(H512);
-impl_serde_for_bigint!(H520);
-impl_serde_for_bigint!(H2048);
-impl_serde_for_bigint!(U256);
+#[cfg(feature = "serde")]
+impl_serde_for_bigint!(H64, H160, H256, H512, H520, H2048, U256);
 
 #[cfg(feature = "heapsizeof")]
 known_heap_size!(0, H32, H64, H128, H160, H256, H264, H512, H520, H1024, H2048);
@@ -645,5 +646,35 @@ mod tests {
         assert_eq!(H64::from(u), H64::from_any_str("00000000000000000064").unwrap());
         assert_eq!(H64::from(u), H64::from_any_str("0000000000000000000064").unwrap());
         assert_eq!(H64::from(u), H64::from_any_str("0x000000000000000000000064").unwrap());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn hash_deserialization() {
+        use serde_json;
+        let s = r#"["", "5a39ed1020c04d4d84539975b893a4e7c53eab6c2965db8bc3468093a31bc5ae"]"#;
+        let deserialized: Vec<H256> = serde_json::from_str(s).unwrap();
+        assert_eq!(
+            deserialized,
+            vec![
+                H256::from(0),
+                H256::from("5a39ed1020c04d4d84539975b893a4e7c53eab6c2965db8bc3468093a31bc5ae"),
+            ]
+        );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn should_serialize_u256() {
+        use serde_json;
+        let serialized1 = serde_json::to_string(&U256::from(0)).unwrap();
+        let serialized2 = serde_json::to_string(&U256::from(1)).unwrap();
+        let serialized3 = serde_json::to_string(&U256::from(16)).unwrap();
+        let serialized4 = serde_json::to_string(&U256::from(256)).unwrap();
+
+        assert_eq!(serialized1, r#""0x0""#);
+        assert_eq!(serialized2, r#""0x1""#);
+        assert_eq!(serialized3, r#""0x10""#);
+        assert_eq!(serialized4, r#""0x100""#);
     }
 }
