@@ -1,6 +1,6 @@
 # bigint
 
-[![Build Status](https://travis-ci.org/cryptape/bigint.svg?branch=master)](https://travis-ci.org/cryptape/bigint)
+[![Build Status](https://travis-ci.org/cryptape/bigint.svg?branch=develop)](https://travis-ci.org/cryptape/bigint)
 
 Fixed-sized integers arithmetic
 
